@@ -1,0 +1,4 @@
+Adafruit GFX Library
+Adafruit SSD1306
+ESP32Servo
+PubSubClient
