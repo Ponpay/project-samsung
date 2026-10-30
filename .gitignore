@@ -31,3 +31,6 @@ desktop.ini
 secrets.h
 .env
 *.key
+
+# Temp dari credential manager / tooling
+.hermes-tmp.*/
