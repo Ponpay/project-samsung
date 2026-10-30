@@ -111,5 +111,10 @@
     [ "btn1:1.l", "esp:D25", "green", [ "h-297.6", "v-153.6" ] ],
     [ "btn1:2.l", "esp:GND.1", "black", [ "h-355.2", "v-114.9" ] ]
   ],
-  "dependencies": {}
+  "dependencies": {
+    "Adafruit GFX Library": "https://github.com/adafruit/Adafruit-GFX-Library/archive/refs/heads/master.zip",
+    "Adafruit SSD1306": "https://github.com/adafruit/Adafruit_SSD1306/archive/refs/heads/master.zip",
+    "ESP32Servo": "https://github.com/madhephaestus/ESP32Servo/archive/refs/heads/master.zip",
+    "PubSubClient": "https://github.com/knolleary/pubsubclient/archive/refs/heads/master.zip"
+  }
 }

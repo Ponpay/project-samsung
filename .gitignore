@@ -1,0 +1,33 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- Dashboard runtime (dibuat saat dashboard jalan) ----
+dashboard/logs/
+dashboard/serial.log
+dashboard/paste.txt
+serial.log
+
+# ---- Build / test artifacts ----
+build/
+*.exe
+*.o
+*.bin
+*.elf
+tests/.build/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# ---- Kredensial (JANGAN pernah commit) ----
+secrets.h
+.env
+*.key

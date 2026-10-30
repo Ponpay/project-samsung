@@ -1,0 +1,18 @@
+# Normalisasi line ending
+* text=auto
+
+# Kode & teks
+*.py     text eol=lf
+*.ino    text eol=lf
+*.md     text eol=lf
+*.json   text eol=lf
+*.txt    text eol=lf
+*.html   text eol=lf
+*.gitignore text eol=lf
+
+# Biner — jangan diubah line ending-nya
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.zip    binary
+*.exe    binary

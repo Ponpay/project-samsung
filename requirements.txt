@@ -1,0 +1,6 @@
+# Dependensi Python untuk SafeGas
+#
+# Wajib: Python 3.8+ (stdlib saja sudah cukup untuk mode sim/serial/replay)
+#
+# Opsional — hanya kalau memakai mode MQTT:
+paho-mqtt>=2.0.0

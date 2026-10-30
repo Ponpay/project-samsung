@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SafeGas — pemantauan kebocoran gas LPG secara realtime.">
+<meta name="theme-color" content="#101214">
+<title>SafeGas · Pemantauan Realtime</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%230f6f66'/%3E%3Cpath d='M12 19a5 5 0 0 0 5-5c0-1.5-.7-2.9-2.2-4S12.4 6 12 4.5c-.4 1.5-1.5 3.2-2.8 4.3S7 12.5 7 14a5 5 0 0 0 5 5Z' fill='%23fff'/%3E%3C/svg%3E">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+/* ══════════════════════════════════════════════════════════
+   SAFEGAS — DESIGN TOKENS
+   Primitif → semantik. Komponen hanya memakai token semantik.
+   Dua tema: [data-theme="light"] dan [data-theme="dark"].
+   ══════════════════════════════════════════════════════════ */
+
+:root{
+  /* skala tipografi */
+  --t-xs:11px; --t-sm:12.5px; --t-base:14px; --t-md:16px;
+  --t-lg:20px; --t-xl:26px; --t-2xl:34px; --t-3xl:44px;
+
+  /* spasi 4px */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px;
+  --s6:24px; --s8:32px; --s10:40px; --s12:48px;
+
+  /* radius — sengaja kecil: kesan instrumen, bukan mainan */
+  --r1:3px; --r2:5px; --r3:7px;
+
+  /* gerak */
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --dur:140ms;
+
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+/* ── TEMA GELAP (default) ───────────────────────────────── */
+[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101214;
+  --bg-grid:rgba(255,255,255,.028);
+  --surface:#171a1d;
+  --surface-2:#1e2226;
+  --surface-3:#252a2f;
+  --border:#2b3036;
+  --border-strong:#3a4149;
+  --fg:#e8eaed;
+  --fg-2:#b6bdc5;
+  --fg-3:#8b949e;
+  --accent:#2dd4bf;
+  --accent-fg:#052b28;
+  --accent-dim:rgba(45,212,191,.14);
+  --ok:#47cd89;      --ok-bg:rgba(71,205,137,.13);
+  --warn:#fdb022;    --warn-bg:rgba(253,176,34,.13);
+  --danger:#f97066;  --danger-bg:rgba(249,112,102,.13);
+  --info:#60a5fa;    --info-bg:rgba(96,165,250,.13);
+  --focus:#2dd4bf;
+  --shadow:0 1px 0 rgba(255,255,255,.03);
+  --plot-grid:rgba(255,255,255,.055);
+  --plot-axis:#8b949e;
+  --warn-line:#fdb022;
+  --warn-band:rgba(253,176,34,.20);
+}
+
+/* ── TEMA TERANG ────────────────────────────────────────── */
+[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f6f5f2;
+  --bg-grid:rgba(20,24,28,.035);
+  --surface:#ffffff;
+  --surface-2:#faf9f7;
+  --surface-3:#f0eeea;
+  --border:#ddd9d2;
+  --border-strong:#c4bfb6;
+  --fg:#17191c;
+  --fg-2:#41474d;
+  --fg-3:#6b7280;
+  --accent:#0f6f66;
+  --accent-fg:#ffffff;
+  --accent-dim:rgba(15,111,102,.10);
+  --ok:#067647;      --ok-bg:rgba(6,118,71,.09);
+  --warn:#b54708;    --warn-bg:rgba(181,71,8,.09);
+  --danger:#b42318;  --danger-bg:rgba(180,35,24,.09);
+  --info:#1d4ed8;    --info-bg:rgba(29,78,216,.09);
+  --focus:#0f6f66;
+  --shadow:0 1px 3px rgba(20,24,28,.10),0 0 0 .5px rgba(20,24,28,.04);
+  --plot-grid:rgba(20,24,28,.09);
+  --plot-axis:#5b6270;
+  --warn-line:#a16207;      /* ambang: cokelat tua, kontras di putih */
+  --warn-band:rgba(161,98,7,.16);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{ -webkit-text-size-adjust:100% }
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--fg);
+  font-family:var(--sans);
+  font-size:var(--t-base);
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  /* tekstur grid halus — kesan kertas teknis, bukan gradient blob */
+  background-image:
+    linear-gradient(var(--bg-grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--bg-grid) 1px,transparent 1px);
+  background-size:44px 44px;
+  transition:background-color var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+h1,h2,h3{margin:0;line-height:1.15;letter-spacing:-.015em;font-weight:650}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r1)}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip{position:absolute;inset-inline-start:-9999px;top:0;z-index:200;
+  background:var(--accent);color:var(--accent-fg);padding:10px 16px;
+  font-weight:650;font-size:var(--t-sm);border-radius:0 0 var(--r2) 0}
+.skip:focus{inset-inline-start:0}
+
+/* ── label mikro ────────────────────────────────────────── */
+.micro{
+  font-size:var(--t-xs);font-weight:650;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--fg-3);
+}
+
+/* ══════════ SHELL ══════════ */
+.shell{min-height:100vh;display:grid;grid-template-rows:auto 1fr auto}
+
+/* ══════════ TOPBAR ══════════ */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap;
+  padding:var(--s3) var(--s5);
+  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(12px) saturate(150%);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:var(--s3);min-width:0}
+.brand svg{width:30px;height:30px;flex:0 0 auto;color:var(--accent)}
+.brand-txt{display:flex;flex-direction:column;line-height:1.15}
+.brand-txt b{font-size:var(--t-md);font-weight:700;letter-spacing:-.02em}
+.brand-txt span{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--fg-3);font-weight:600}
+
+.topbar-right{display:flex;align-items:center;gap:var(--s2);margin-inline-start:auto;flex-wrap:wrap}
+
+/* chip status */
+.chip{
+  display:inline-flex;align-items:center;gap:7px;
+  height:30px;padding:0 11px;
+  border:1px solid var(--border);border-radius:var(--r2);
+  background:var(--surface);color:var(--fg-2);
+  font-size:var(--t-sm);white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+  transition:border-color var(--dur) var(--ease),background var(--dur) var(--ease);
+}
+.chip b{color:var(--fg);font-weight:650}
+.chip .led{width:7px;height:7px;border-radius:50%;background:var(--fg-3);flex:0 0 auto}
+.chip[data-live="on"]{border-color:color-mix(in srgb,var(--ok) 45%,var(--border));
+  background:var(--ok-bg)}
+.chip[data-live="on"] .led{background:var(--ok);animation:breathe 2.4s var(--ease) infinite}
+.chip[data-live="off"]{border-color:color-mix(in srgb,var(--danger) 45%,var(--border));
+  background:var(--danger-bg);color:var(--fg)}
+.chip[data-live="off"] .led{background:var(--danger)}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* tombol tema */
+.theme-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  min-height:30px;height:30px;padding:0 11px;cursor:pointer;
+  border:1px solid var(--border);border-radius:var(--r2);
+  background:var(--surface);color:var(--fg-2);
+  font-size:var(--t-sm);font-weight:600;
+  transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease),
+             color var(--dur) var(--ease);
+}
+.theme-btn:hover{background:var(--surface-2);border-color:var(--border-strong);color:var(--fg)}
+.theme-btn svg{width:14px;height:14px;flex:0 0 auto}
+.theme-btn .ico-sun{display:none}
+[data-theme="light"] .theme-btn .ico-sun{display:block}
+[data-theme="light"] .theme-btn .ico-moon{display:none}
+
+/* ══════════ MAIN ══════════ */
+main{padding:var(--s5);max-width:1600px;width:100%;margin-inline:auto}
+
+/* ══════════ STATUS STRIP ══════════ */
+.strip{
+  display:grid;gap:var(--s4);
+  grid-template-columns:minmax(0,1fr);
+  padding:var(--s4) var(--s5);
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-inline-start:3px solid var(--st,var(--fg-3));
+  border-radius:var(--r3);
+  box-shadow:var(--shadow);
+  transition:border-color var(--dur) var(--ease);
+  margin-bottom:var(--s4);
+}
+.strip-left{display:flex;flex-direction:column;gap:2px;min-width:0}
+.strip-status{
+  display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+  font-family:var(--mono);font-size:var(--t-2xl);font-weight:700;
+  letter-spacing:-.03em;line-height:1.05;color:var(--st,var(--fg));
+  transition:color var(--dur) var(--ease);
+}
+.strip-status .lock{
+  font-family:var(--sans);font-size:10.5px;font-weight:750;
+  letter-spacing:.1em;text-transform:uppercase;
+  padding:4px 9px;border-radius:var(--r1);
+  color:var(--st,var(--fg-2));
+  background:color-mix(in srgb,var(--st,var(--fg-3)) 16%,transparent);
+  border:1px solid color-mix(in srgb,var(--st,var(--fg-3)) 40%,transparent);
+}
+.strip-meta{
+  font-size:var(--t-sm);color:var(--fg-3);
+  font-variant-numeric:tabular-nums;margin-top:2px;
+}
+.strip-meta b{color:var(--fg-2);font-weight:650;font-family:var(--mono)}
+
+/* aktuator — tabel mini, bukan kartu glow */
+.acts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;
+  background:var(--border);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+.act{background:var(--surface-2);padding:var(--s3);display:flex;flex-direction:column;gap:5px;min-width:0}
+.act-top{display:flex;align-items:center;gap:6px}
+.act-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;
+  background:var(--fg-3);opacity:.4;
+  transition:background var(--dur) var(--ease),opacity var(--dur) var(--ease),
+             box-shadow var(--dur) var(--ease)}
+.act[data-lit="ok"] .act-dot{background:var(--ok);opacity:1;box-shadow:0 0 0 3px var(--ok-bg)}
+.act[data-lit="warn"] .act-dot{background:var(--warn);opacity:1;box-shadow:0 0 0 3px var(--warn-bg)}
+.act[data-lit="bad"] .act-dot{background:var(--danger);opacity:1;box-shadow:0 0 0 3px var(--danger-bg)}
+.act-name{font-size:10px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-3)}
+.act-val{font-family:var(--mono);font-size:var(--t-base);font-weight:700;
+  color:var(--fg);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ══════════ METRIK ══════════ */
+.metrics{
+  display:grid;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r3);overflow:hidden;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  margin-bottom:var(--s4);
+}
+.metric{
+  background:var(--surface);padding:var(--s4);
+  display:flex;flex-direction:column;gap:var(--s2);min-width:0;
+  transition:background var(--dur) var(--ease);
+}
+.metric:hover{background:var(--surface-2)}
+.metric-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s2)}
+.metric-val{
+  font-family:var(--mono);font-size:var(--t-xl);font-weight:700;
+  letter-spacing:-.03em;line-height:1;color:var(--fg);
+  font-variant-numeric:tabular-nums;
+  transition:color var(--dur) var(--ease);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.metric-val .u{font-size:var(--t-sm);font-weight:600;color:var(--fg-3);
+  margin-inline-start:4px;letter-spacing:0;font-family:var(--sans)}
+.metric-sub{font-size:var(--t-sm);color:var(--fg-3);font-variant-numeric:tabular-nums}
+.metric[data-tone="ok"] .metric-val{color:var(--ok)}
+.metric[data-tone="warn"] .metric-val{color:var(--warn)}
+.metric[data-tone="bad"] .metric-val{color:var(--danger)}
+.metric[data-tone="info"] .metric-val{color:var(--accent)}
+.spark{display:block;width:100%;height:22px;margin-top:2px;overflow:visible}
+
+/* ══════════ PANEL ══════════ */
+.panels{display:grid;gap:var(--s4);grid-template-columns:1fr}
+.panel{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r3);overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:var(--shadow);
+}
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);
+  flex-wrap:wrap;background:var(--surface-2);
+}
+.panel-head h2{font-size:var(--t-sm);font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--fg-2)}
+.panel-meta{font-size:var(--t-xs);color:var(--fg-3);
+  font-family:var(--mono);font-variant-numeric:tabular-nums}
+#chart{width:100%;height:420px}
+
+/* ══════════ LOG ══════════ */
+.log{overflow:auto;max-height:420px;overscroll-behavior:contain}
+.log::-webkit-scrollbar{width:9px}
+.log::-webkit-scrollbar-track{background:transparent}
+.log::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:9px;
+  border:2px solid var(--surface)}
+.log::-webkit-scrollbar-thumb:hover{background:var(--fg-3)}
+.ev{
+  display:grid;grid-template-columns:52px 1fr;gap:var(--s3);
+  padding:9px var(--s4);
+  border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent);
+  font-size:var(--t-sm);align-items:start;
+  animation:evIn var(--dur) var(--ease);
+}
+@keyframes evIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.ev:last-child{border-bottom:0}
+.ev-t{font-family:var(--mono);font-size:var(--t-xs);color:var(--fg-3);
+  font-variant-numeric:tabular-nums;padding-top:2px}
+.ev-body{display:flex;gap:7px;align-items:flex-start;line-height:1.4;
+  overflow-wrap:anywhere;min-width:0}
+.ev-ico{width:13px;height:13px;flex:0 0 auto;margin-top:2px}
+.ev[data-lv="0"]{color:var(--fg-2)} .ev[data-lv="0"] .ev-ico{color:var(--info)}
+.ev[data-lv="1"]{color:var(--warn)} .ev[data-lv="1"] .ev-ico{color:var(--warn)}
+.ev[data-lv="2"]{color:var(--danger);font-weight:600}
+.ev[data-lv="2"] .ev-ico{color:var(--danger)}
+.empty{padding:var(--s10) var(--s4);text-align:center;color:var(--fg-3);font-size:var(--t-sm)}
+.empty svg{width:26px;height:26px;margin-bottom:var(--s2);opacity:.45}
+
+/* ══════════ TOOLBAR ══════════ */
+.toolbar{display:flex;gap:var(--s2);flex-wrap:wrap;margin-top:var(--s4)}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  height:36px;padding:0 var(--s4);cursor:pointer;
+  border:1px solid var(--border);border-radius:var(--r2);
+  background:var(--surface);color:var(--fg-2);
+  font-size:var(--t-sm);font-weight:600;
+  transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease),
+             color var(--dur) var(--ease),transform var(--dur) var(--ease);
+}
+.btn svg{width:14px;height:14px;flex:0 0 auto}
+.btn:hover:not(:disabled){background:var(--surface-2);border-color:var(--border-strong);color:var(--fg)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn-primary:hover:not(:disabled){background:color-mix(in srgb,var(--accent) 88%,var(--fg));
+  border-color:transparent;color:var(--accent-fg)}
+.btn-danger{border-color:color-mix(in srgb,var(--danger) 45%,var(--border));
+  color:var(--danger);background:var(--danger-bg)}
+.btn-danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 20%,var(--surface));
+  border-color:var(--danger);color:var(--danger)}
+
+/* ══════════ BANNER ══════════ */
+.banner{
+  display:none;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);margin-bottom:var(--s4);
+  border:1px solid color-mix(in srgb,var(--danger) 45%,var(--border));
+  border-inline-start:3px solid var(--danger);
+  border-radius:var(--r2);background:var(--danger-bg);
+  color:var(--fg);font-size:var(--t-sm);font-weight:600;
+}
+.banner.show{display:flex;animation:evIn var(--dur) var(--ease)}
+.banner svg{width:16px;height:16px;flex:0 0 auto;color:var(--danger)}
+
+/* ══════════ TOAST ══════════ */
+.toasts{
+  position:fixed;z-index:90;display:flex;flex-direction:column;gap:var(--s2);
+  inset-block-end:var(--s5);inset-inline-start:50%;transform:translateX(-50%);
+  max-width:min(88vw,380px);pointer-events:none;align-items:stretch;
+}
+.toast{
+  display:flex;gap:var(--s3);align-items:flex-start;
+  padding:10px var(--s3);border-radius:var(--r2);
+  background:var(--surface-2);border:1px solid var(--border-strong);
+  box-shadow:0 8px 24px rgba(0,0,0,.28);
+  font-size:var(--t-sm);pointer-events:auto;
+  animation:evIn var(--dur) var(--ease);
+}
+.toast svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
+.toast[data-tone="ok"] svg{color:var(--ok)}
+.toast[data-tone="bad"] svg{color:var(--danger)}
+.toast[data-tone="info"] svg{color:var(--info)}
+.toast-x{
+  margin-inline-start:auto;background:none;border:0;cursor:pointer;
+  color:var(--fg-3);padding:0;border-radius:var(--r1);
+  min-width:24px;min-height:24px;width:24px;height:24px;
+  display:grid;place-items:center;flex:0 0 auto;
+}
+.toast-x:hover{color:var(--fg)}
+
+/* ══════════ FOOTER ══════════ */
+footer{
+  padding:var(--s3) var(--s5);border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;gap:var(--s3);flex-wrap:wrap;
+  font-size:var(--t-xs);color:var(--fg-3);
+}
+
+/* ══════════ RESPONSIF ══════════ */
+@media (min-width:720px){
+  .strip{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+  .acts{grid-template-columns:repeat(3,minmax(88px,1fr))}
+  .metrics{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
+@media (min-width:1100px){
+  .panels{grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)}
+  #chart{height:460px}
+  .log{max-height:460px}
+}
+@media (min-width:1200px){
+  main{padding:var(--s6) var(--s8)}
+  .topbar{padding:var(--s3) var(--s8)}
+}
+@media (max-width:719px){
+  .toasts{inset-inline:var(--s3);inset-block-start:auto;inset-block-end:var(--s3);
+    transform:none;max-width:none;flex-direction:column;max-height:26vh}
+  main{padding:var(--s4) var(--s4) var(--s4)}
+  /* toolbar ikut flow (bukan fixed) — tidak menutupi konten */
+  .toolbar{position:static}
+  .log{max-height:300px}
+  .strip-status{font-size:var(--t-xl)}
+  .btn{height:40px;flex:1 1 auto}
+  #btnReset{flex:1 1 100%}
+  #chart{height:320px}
+  .metric-val{font-size:var(--t-lg)}
+  /* 5 kartu di 2 kolom: kartu terakhir melebar penuh */
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metrics > .metric:last-child{grid-column:1 / -1}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;
+    animation-iteration-count:1!important;transition-duration:.01ms!important;
+    scroll-behavior:auto!important}
+}
+@media (forced-colors:active){
+  .metric,.panel,.strip,.chip,.btn{border:1px solid CanvasText}
+  .act-dot{forced-color-adjust:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Lewati ke konten</a>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5S12.5 4 12 2c-.5 2-2 4.5-4 6.1S5 13 5 15a7 7 0 0 0 7 7Z"/>
+        <path d="M12 18a3 3 0 0 0 3-3c0-1.5-1-2.4-2-3.5"/>
+      </svg>
+      <div class="brand-txt">
+        <b>SafeGas</b>
+        <span>Pemantauan Realtime</span>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <span class="chip" id="chipConn" data-live="off" role="status" aria-live="polite">
+        <span class="led" aria-hidden="true"></span>
+        <span id="connTxt">menghubungkan…</span>
+      </span>
+      <span class="chip" title="Sumber data"><span id="srcTxt">—</span></span>
+      <span class="chip" title="Perangkat"><b id="devTxt">—</b></span>
+      <span class="chip"><b id="cntTxt">0</b>&nbsp;sampel</span>
+      <button class="theme-btn" id="themeBtn" type="button" aria-pressed="false">
+        <svg class="ico-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        <svg class="ico-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+        <span id="themeTxt">Gelap</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="banner" id="banner" role="alert">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+        <path d="M12 9v4M12 17h.01"/></svg>
+      <span id="bannerTxt"></span>
+    </div>
+
+    <section class="strip" id="strip" aria-labelledby="statusLbl">
+      <div class="strip-left">
+        <span class="micro" id="statusLbl">Status Sistem</span>
+        <div class="strip-status">
+          <span id="statusTxt">—</span>
+          <span class="lock" id="statusLock" hidden></span>
+        </div>
+        <div class="strip-meta" id="statusMeta">menunggu data…</div>
+      </div>
+      <div class="acts" role="group" aria-label="Status aktuator">
+        <div class="act" id="actValve" data-lit="off">
+          <div class="act-top"><span class="act-dot" aria-hidden="true"></span>
+            <span class="act-name">Katup</span></div>
+          <span class="act-val" id="actValveTxt">—</span>
+        </div>
+        <div class="act" id="actPower" data-lit="off">
+          <div class="act-top"><span class="act-dot" aria-hidden="true"></span>
+            <span class="act-name">Listrik</span></div>
+          <span class="act-val" id="actPowerTxt">—</span>
+        </div>
+        <div class="act" id="actAlarm" data-lit="off">
+          <div class="act-top"><span class="act-dot" aria-hidden="true"></span>
+            <span class="act-name">Alarm</span></div>
+          <span class="act-val" id="actAlarmTxt">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="Metrik">
+      <article class="metric" id="mAdc" data-tone="info">
+        <div class="metric-head"><span class="micro">ADC Saat Ini</span></div>
+        <div class="metric-val" id="vAdc">—</div>
+        <div class="metric-sub" id="vAdcSub">raw —</div>
+        <svg class="spark" id="spAdc" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </article>
+      <article class="metric" id="mPpm" data-tone="info">
+        <div class="metric-head"><span class="micro">Estimasi ppm</span></div>
+        <div class="metric-val" id="vPpm">—</div>
+        <div class="metric-sub">kurva LPG MQ-2</div>
+        <svg class="spark" id="spPpm" viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </article>
+      <article class="metric" id="mThr" data-tone="info">
+        <div class="metric-head"><span class="micro">Ambang Gas</span></div>
+        <div class="metric-val" id="vThr">—</div>
+        <div class="metric-sub" id="vThrSub">—</div>
+      </article>
+      <article class="metric" id="mUp" data-tone="info">
+        <div class="metric-head"><span class="micro">Uptime</span></div>
+        <div class="metric-val" id="vUp">—</div>
+        <div class="metric-sub">detik</div>
+      </article>
+      <article class="metric" id="mRate" data-tone="info">
+        <div class="metric-head"><span class="micro">Laju Data</span></div>
+        <div class="metric-val" id="vRate">—</div>
+        <div class="metric-sub" id="vRateSub">—</div>
+      </article>
+    </section>
+
+    <div class="panels">
+      <section class="panel" aria-labelledby="chartLbl">
+        <div class="panel-head">
+          <h2 id="chartLbl">Tren Kadar Gas</h2>
+          <span class="panel-meta" id="chartMeta">—</span>
+        </div>
+        <div id="chart" role="img"
+             aria-label="Grafik realtime kadar gas: nilai ADC, ambang batas, dan zona histeresis"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="logLbl">
+        <div class="panel-head">
+          <h2 id="logLbl">Log Event</h2>
+          <span class="panel-meta" id="logMeta">0</span>
+        </div>
+        <div class="log" id="log" role="log" aria-live="polite" aria-relevant="additions">
+          <div class="empty" id="logEmpty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                 aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+            <div>Belum ada event.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn" id="btnPause" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>
+        <span id="pauseTxt">Jeda</span>
+      </button>
+      <button class="btn" id="btnClear" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        Bersihkan
+      </button>
+      <button class="btn" id="btnCsv" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        Ekspor CSV
+      </button>
+      <button class="btn btn-danger" id="btnReset" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        Kirim Reset
+      </button>
+    </div>
+  </main>
+
+  <footer>
+    <span>SafeGas — Smart LPG Leakage Prevention System</span>
+    <span>Samsung Innovation Campus Batch 8</span>
+  </footer>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════
+   SafeGas dashboard — frontend
+   Data via SSE (/stream). Tema gelap/terang via [data-theme].
+   ══════════════════════════════════════════════════════════ */
+
+const MAXPTS = 900;
+const $ = (id) => document.getElementById(id);
+
+const S = {
+  paused: false, sSeq: 0, eSeq: 0, count: 0, evCount: 0,
+  X: [], A: [], R: [], P: [], V: [], W: [], AL: [],
+  lastStatus: null, thr: 1500, es: null, backoff: 1000, live: true, cmd: false,
+  marks: [],   /* penanda event penting di grafik: {x, y, kind} */
+};
+
+/* status → token warna */
+const STATUS = {
+  WARMUP:       { label: "Warm-up",      tone: "off",   lock: "Kalibrasi" },
+  NORMAL:       { label: "Normal",       tone: "ok",    lock: null },
+  ADA_GAS:      { label: "Ada Gas",      tone: "warn",  lock: null },
+  MEMBURUK:     { label: "Memburuk",     tone: "warn",  lock: null },
+  BAHAYA:       { label: "Bahaya",       tone: "bad",   lock: "Terkunci" },
+  SENSOR_FAULT: { label: "Sensor Fault", tone: "bad",   lock: "Fail-safe" },
+};
+
+const num = (n, d = 0) => (n === null || n === undefined || Number.isNaN(+n))
+  ? "—" : Number(n).toLocaleString("id-ID",
+      { minimumFractionDigits: d, maximumFractionDigits: d });
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* hex -> rgba (Plotly tidak memahami color-mix) */
+function rgba(hex, a) {
+  const h = String(hex).trim().replace("#", "");
+  const n = h.length === 3
+    ? h.split("").map((c) => c + c).join("")
+    : h.padEnd(6, "0").slice(0, 6);
+  const r = parseInt(n.slice(0, 2), 16) || 0;
+  const g = parseInt(n.slice(2, 4), 16) || 0;
+  const b = parseInt(n.slice(4, 6), 16) || 0;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+/* ── token runtime (dibaca dari CSS) ──────────────────── */
+function tokens() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = (n) => cs.getPropertyValue(n).trim();
+  return {
+    accent: g("--accent"), ok: g("--ok"), warn: g("--warn"),
+    danger: g("--danger"), info: g("--info"),
+    fg: g("--fg"), fg2: g("--fg-2"), fg3: g("--fg-3"),
+    surface: g("--surface"), surface2: g("--surface-2"),
+    border: g("--border"), grid: g("--plot-grid"), axis: g("--plot-axis"),
+    warnLine: g("--warn-line"), warnBand: g("--warn-band"),
+  };
+}
+
+/* ── tema ─────────────────────────────────────────────── */
+const THEME_KEY = "safegas-theme";
+
+function applyTheme(mode, persist) {
+  document.documentElement.setAttribute("data-theme", mode);
+  $("themeTxt").textContent = mode === "dark" ? "Gelap" : "Terang";
+  $("themeBtn").setAttribute("aria-pressed", String(mode === "light"));
+  $("themeBtn").setAttribute("aria-label",
+    mode === "dark" ? "Aktifkan mode terang" : "Aktifkan mode gelap");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = mode === "dark" ? "#101214" : "#f6f5f2";
+  if (persist) { try { localStorage.setItem(THEME_KEY, mode); } catch {} }
+  if (typeof chartReady !== "undefined" && chartReady) redraw();
+  drawSparks();
+}
+
+function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem(THEME_KEY); } catch {}
+  const prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+  applyTheme(saved || (prefersLight ? "light" : "dark"), false);
+}
+
+$("themeBtn").addEventListener("click", () => {
+  const next = document.documentElement.getAttribute("data-theme") === "dark"
+    ? "light" : "dark";
+  applyTheme(next, true);
+  /* tanpa toast: label tombol + ikon sudah menjadi konfirmasi visual */
+});
+
+/* ── toast ────────────────────────────────────────────── */
+const TOAST_ICON = {
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  ok:   '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
+  bad:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+};
+
+function toast(msg, tone = "info") {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.dataset.tone = tone;
+  el.innerHTML =
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TOAST_ICON[tone] || TOAST_ICON.info}</svg>
+     <span>${esc(msg)}</span>
+     <button class="toast-x" type="button" aria-label="Tutup">
+       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor"
+         stroke-width="2.2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+     </button>`;
+  el.querySelector(".toast-x").onclick = () => el.remove();
+  const box = $("toasts");
+  /* hindari tumpukan toast sejenis: buang yang teksnya sama */
+  Array.from(box.children).forEach((c) => {
+    if ((c.textContent || "").includes(msg)) c.remove();
+  });
+  box.appendChild(el);
+  while (box.children.length > 2) box.removeChild(box.firstChild);
+  setTimeout(() => el.remove(), tone === "bad" ? 9000 : 4800);
+}
+
+/* ══════════ GRAFIK ══════════ */
+let chartReady = false;
+const narrow = () => window.innerWidth < 720;
+
+function chartLayout(t) {
+  return {
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+    font: { family: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            size: narrow() ? 9.5 : 10.5, color: t.axis },
+    margin: { l: 52, r: 16, t: 10, b: 34 },
+    xaxis: {
+      title: { text: "uptime (detik)", font: { size: 10 } },
+      gridcolor: t.grid, zeroline: false, linecolor: t.border,
+      tickfont: { size: narrow() ? 9 : 10 }, automargin: true,
+      showspikes: true, spikemode: "across", spikethickness: 1,
+      spikecolor: t.accent, spikedash: "dot",
+      /* rentang eksplisit: cegah sumbu jadi -1..6 saat data masih sedikit */
+      ...(S.X.length > 1
+        ? { range: [S.X[0], Math.max(S.X[S.X.length - 1], S.X[0] + 10)] }
+        : {}),
+    },
+    yaxis: {
+      title: { text: "ADC", font: { size: 10 } },
+      gridcolor: t.grid, zeroline: false, linecolor: t.border,
+      tickfont: { size: narrow() ? 9 : 10 }, automargin: true,
+      range: [0, 3300],
+    },
+    legend: {
+      orientation: "h", y: 1.14, x: 0, font: { size: 10 },
+      bgcolor: "rgba(0,0,0,0)", itemwidth: 30,
+    },
+    hovermode: "x unified",
+    hoverlabel: {
+      bgcolor: t.surface2, bordercolor: t.border,
+      font: { family: "ui-sans-serif, system-ui, sans-serif", size: 11, color: t.fg },
+    },
+    showlegend: true, dragmode: false,
+    transition: { duration: 0 },
+    /* penanda vertikal untuk momen penting (BAHAYA / reset) */
+    shapes: S.marks.slice(-12).map((m) => ({
+      type: "line", xref: "x", yref: "paper",
+      x0: m.x, x1: m.x, y0: 0, y1: 1,
+      line: { color: m.kind === "bad" ? rgba(t.danger, .5) : rgba(t.ok, .5),
+              width: 1, dash: "dot" },
+    })),
+    annotations: [
+      /* nilai terakhir di ujung kurva */
+      ...(S.X.length && Number.isFinite(+S.A[S.A.length - 1]) ? [{
+        x: S.X[S.X.length - 1], y: +S.A[S.A.length - 1],
+        xref: "x", yref: "y", yanchor: "bottom", xanchor: "center",
+        text: `${Math.round(+S.A[S.A.length - 1])}`,
+        showarrow: false, font: { size: 10, color: t.accent,
+                                  family: "ui-monospace, monospace" },
+        bgcolor: rgba(t.surface, .8), borderpad: 1,
+      }] : []),
+      ...S.marks.slice(-6).map((m) => ({
+      x: m.x, y: 1, xref: "x", yref: "paper", yanchor: "bottom",
+      text: m.kind === "bad" ? "bahaya" : "reset",
+      showarrow: false, font: { size: 8.5, color: m.kind === "bad" ? t.danger : t.ok },
+        bgcolor: rgba(t.surface, .85), borderpad: 1,
+      })),
+    ],
+  };
+}
+
+function chartData(t) {
+  const n = S.X.length;
+  const first = n ? S.X[0] : 0;
+  const last = n ? S.X[n - 1] : 0;
+  /* Zona & garis ambang harus membentang selebar sumbu, bukan selebar data —
+     kalau tidak, lebarnya nol saat data masih sedikit. */
+  const x0 = n > 1 ? first : 0;
+  const x1 = n > 1 ? Math.max(last, first + 10) : 10;
+  const on = S.thr || 1500;
+  const off = Math.round(on * (1300 / 1500));
+
+  const out = [
+    /* zona histeresis — paling bawah, jangan menutupi data */
+    {
+      x: [x0, x1, x1, x0, x0],
+      y: [off, off, on, on, off],
+      type: "scatter", mode: "lines", fill: "toself",
+      fillcolor: t.warnBand,
+      line: { color: t.warnLine, width: 1.2, dash: "dot", opacity: .85 },
+      name: `Zona histeresis ${off}–${on}`, hoverinfo: "skip", showlegend: true,
+    },
+    /* garis ambang */
+    {
+      x: [x0, x1], y: [on, on], type: "scatter", mode: "lines",
+      line: { color: t.warnLine, width: 1.8, dash: "dash" },
+      name: `Ambang ${on}`, hoverinfo: "skip",
+    },
+    /* titik nilai terakhir — mata langsung tahu nilai sekarang */
+    ...(S.X.length && Number.isFinite(+S.A[S.A.length - 1]) ? [{
+      x: [S.X[S.X.length - 1]], y: [+S.A[S.A.length - 1]],
+      type: "scatter", mode: "markers",
+      marker: { color: t.accent, size: 7,
+                line: { color: t.surface, width: 1.5 } },
+      name: "nilai kini", hoverinfo: "skip", showlegend: false,
+    }] : []),
+    /* area di bawah ADC */
+    {
+      x: S.X, y: S.A, type: "scatter", mode: "lines",
+      fill: "tozeroy", fillcolor: rgba(t.accent, 0.09),
+      line: { color: t.accent, width: 2, shape: "spline", smoothing: 0.35 },
+      name: "ADC", hovertemplate: "%{y} ADC<extra></extra>",
+    },
+    /* raw — sekunder, disembunyikan di layar sempit */
+    {
+      x: S.X, y: S.R, type: "scatter", mode: "lines",
+      line: { color: t.fg3, width: 1.2, dash: "longdash" }, opacity: 0.65,
+      name: "raw (mentah)", hoverinfo: "skip", showlegend: false,
+      visible: "legendonly",
+    },
+  ];
+  /* ppm TIDAK diplot di sumbu kedua: dua skala berbeda pada satu grafik
+     menyesatkan (nilai ppm 1.600 tampak sejajar ADC 2.900). ppm tersedia
+     di kartu metrik; sumbu kanan dihapus agar satu skala = satu kebenaran. */
+  return out;
+}
+
+function drawChart() {
+  if (typeof Plotly === "undefined") {
+    $("chart").innerHTML = '<div class="empty">Plotly gagal dimuat — periksa koneksi.</div>';
+    return;
+  }
+  const t = tokens();
+  Plotly.react("chart", chartData(t), chartLayout(t),
+    { displayModeBar: false, responsive: true, displaylogo: false })
+    .then(() => { chartReady = true; })
+    .catch(() => {});
+}
+const redraw = drawChart;
+
+/* ══════════ SPARKLINE ══════════ */
+function spark(id, series, color) {
+  const el = $(id);
+  if (!el) return;
+  const v = series.filter((x) => x !== null && x !== undefined).slice(-70);
+  if (v.length < 2) { el.innerHTML = ""; return; }
+  const lo = Math.min(...v), hi = Math.max(...v), span = (hi - lo) || 1;
+  const H = 22, P = 2;
+  const pts = v.map((y, i) =>
+    `${((i / (v.length - 1)) * 100).toFixed(2)},` +
+    `${((H - P) - ((y - lo) / span) * (H - P * 2)).toFixed(2)}`).join(" ");
+  el.innerHTML =
+    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6"
+       stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+}
+function drawSparks() {
+  const t = tokens();
+  spark("spAdc", S.A, t.accent);
+  spark("spPpm", S.P, t.info);
+}
+
+/* ══════════ RENDER ══════════ */
+function render(s) {
+  if (!s) return;
+  const st = s.status || "—";
+  const m = STATUS[st] || STATUS.WARMUP;
+  const adc = +s.adc || 0;
+  const thr = +s.threshold || 1500;
+  const t = tokens();
+  const toneVar = { ok: t.ok, warn: t.warn, bad: t.danger, off: t.fg3 }[m.tone] || t.fg3;
+
+  /* strip status */
+  const strip = $("strip");
+  strip.style.setProperty("--st", toneVar);
+  $("statusTxt").textContent = m.label.toUpperCase();
+  const lock = $("statusLock");
+  if (m.lock) { lock.hidden = false; lock.textContent = m.lock; }
+  else lock.hidden = true;
+  $("statusMeta").innerHTML =
+    `perangkat <b>${esc(s.device || "—")}</b> · uptime <b>${num(s.uptime_s)}</b> s`;
+
+  /* banner */
+  const bn = $("banner");
+  if (st === "BAHAYA") {
+    bn.classList.add("show");
+    $("bannerTxt").textContent =
+      "BAHAYA — sistem terkunci. Ventilasi ruangan, jangan nyalakan listrik, "
+      + "lalu kirim reset setelah gas bersih.";
+  } else if (st === "SENSOR_FAULT") {
+    bn.classList.add("show");
+    $("bannerTxt").textContent =
+      "SENSOR FAULT — pembacaan tidak wajar. Katup ditutup dan listrik diputus "
+      + "(fail-safe). Periksa kabel sensor.";
+  } else bn.classList.remove("show");
+
+  /* aktuator: lit = aman/waspada/bahaya, padam bila non-aktif */
+  const vOpen = s.valve === "OPEN", pOn = s.power === "ON", al = !!s.alarm;
+  const setAct = (id, txtId, label, lit) => {
+    $(id).dataset.lit = lit;
+    $(txtId).textContent = label;
+  };
+  /* Katup TUTUP & listrik PUTUS adalah TINDAKAN AMAN saat bahaya —
+     jangan diwarnai merah. Yang merah hanya alarm yang aktif. */
+  setAct("actValve", "actValveTxt", vOpen ? "BUKA" : "TUTUP",
+         vOpen ? "ok" : "warn");
+  setAct("actPower", "actPowerTxt", pOn ? "NYALA" : "PUTUS",
+         pOn ? "ok" : "warn");
+  setAct("actAlarm", "actAlarmTxt", al ? "ON" : "OFF", al ? "bad" : "off");
+
+  /* metrik */
+  $("vAdc").textContent = num(s.adc);
+  $("vAdcSub").textContent = `raw ${num(s.adc_raw)}`;
+  $("vPpm").innerHTML = `${num(s.ppm)}<span class="u">ppm</span>`;
+  $("vThr").innerHTML = `${num(thr)}<span class="u">ADC</span>`;
+  const off = Math.round(thr * (1300 / 1500));
+  $("vThrSub").textContent = `ON ${num(thr)} · OFF ${num(off)}`;
+  $("vUp").textContent = num(s.uptime_s);
+
+  const risk = adc >= thr ? "bad" : (adc >= thr * 0.72 ? "warn" : "info");
+  $("mAdc").dataset.tone = risk;
+  $("mPpm").dataset.tone = risk;
+
+  /* laju data */
+  /* Laju data dihitung dari waktu PERANGKAT (uptime), bukan wall-clock,
+     sehingga tetap benar untuk file statis maupun streaming. */
+  const n = S.X.length;
+  if (n > 2) {
+    const span = S.X[n - 1] - S.X[0];
+    if (span > 0) {
+      $("vRate").innerHTML =
+        `${num((n - 1) / span, 1)}<span class="u">sampel/s</span>`;
+      $("vRateSub").textContent = `${n - 1} interval / ${num(span, 0)} dtk`;
+    } else {
+      $("vRate").innerHTML = `—<span class="u">sampel/s</span>`;
+      $("vRateSub").textContent = "menunggu data";
+    }
+  } else {
+    $("vRate").innerHTML = `—<span class="u">sampel/s</span>`;
+    $("vRateSub").textContent = "menunggu data";
+  }
+
+  /* reset: nonaktif selama gas di atas ambang (interlock) */
+  const rb = $("btnReset");
+  const high = adc >= thr;
+  rb.disabled = high || !S.cmd;
+  rb.title = !S.cmd
+    ? "Nonaktif: mode ini hanya membaca data (tanpa jalur perintah ke perangkat)"
+    : (high ? "Nonaktif: kadar gas masih di atas ambang"
+            : "Kirim perintah reset ke perangkat");
+
+  /* notifikasi + penanda grafik saat status berubah */
+  if (S.lastStatus && S.lastStatus !== st) {
+    toast(`Status: ${m.label}`, m.tone === "bad" ? "bad" : (m.tone === "ok" ? "ok" : "info"));
+    if (st === "BAHAYA" || st === "SENSOR_FAULT") {
+      S.marks.push({ x: s.uptime_s ?? 0, kind: "bad" });
+    } else if (st === "NORMAL" && (S.lastStatus === "BAHAYA" || S.lastStatus === "SENSOR_FAULT")) {
+      S.marks.push({ x: s.uptime_s ?? 0, kind: "ok" });
+    }
+    if (S.marks.length > 40) S.marks.shift();
+  }
+  S.lastStatus = st;
+}
+
+function pushSample(s) {
+  S.count++;
+  S.X.push(s.uptime_s ?? S.count);
+  S.A.push(s.adc ?? null);
+  S.R.push(s.adc_raw ?? null);
+  S.P.push(s.ppm ?? null);
+  S.V.push(s.valve === "OPEN" ? 1 : 0);
+  S.W.push(s.power === "ON" ? 1 : 0);
+  S.AL.push(s.alarm ? 1 : 0);
+  if (S.X.length > MAXPTS) ["X","A","R","P","V","W","AL"].forEach((k) => S[k].shift());
+  if (s.threshold) S.thr = +s.threshold;
+  $("cntTxt").textContent = num(S.count);
+  $("chartMeta").textContent = S.X.length === S.count
+    ? `${num(S.X.length)} titik · ${s.uptime_s ?? "—"} s`
+    : `${num(S.X.length)} dari ${num(S.count)} · ${s.uptime_s ?? "—"} s`;
+}
+
+function addEvent(e) {
+  const empty = $("logEmpty");
+  if (empty) empty.remove();
+  S.evCount++;
+  const lv = Math.min(2, Math.max(0, +(e.level ?? 0)));
+  const icons = {
+    0: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+    1: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+    2: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
+  };
+  const row = document.createElement("div");
+  row.className = "ev";
+  row.dataset.lv = String(lv);
+  row.innerHTML =
+    `<span class="ev-t">${num(e.uptime_s ?? 0)}s</span>
+     <span class="ev-body">
+       <svg class="ev-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+         aria-hidden="true">${icons[lv]}</svg>
+       <span>${esc(e.msg || "")}</span>
+     </span>`;
+  const log = $("log");
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  while (log.querySelectorAll(".ev").length > 400) log.querySelector(".ev")?.remove();
+  $("logMeta").textContent = `${num(S.evCount)} event`;
+}
+
+/* ══════════ SSE ══════════ */
+function setConn(ok, txt) {
+  $("chipConn").dataset.live = ok ? "on" : "off";
+  $("connTxt").textContent = txt;
+}
+
+function connect() {
+  if (S.es) S.es.close();
+  const es = new EventSource(`/stream?ss=${S.sSeq}&es=${S.eSeq}`);
+  S.es = es;
+
+  es.onopen = () => { S.backoff = 1000; setConn(true, "terhubung"); };
+  es.onerror = () => {
+    setConn(false, "terputus");
+    es.close();
+    setTimeout(connect, S.backoff);
+    S.backoff = Math.min(S.backoff * 1.7, 8000);
+  };
+  es.onmessage = (ev) => {
+    let d; try { d = JSON.parse(ev.data); } catch { return; }
+    if (d.meta) {
+      $("srcTxt").textContent = d.meta.source || d.meta.mode || "—";
+      if (d.meta.device) $("devTxt").textContent = d.meta.device;
+      S.live = d.meta.live !== false;
+      S.cmd = d.meta.cmd === true;
+      if (d.meta.connected === false) setConn(false, "sumber terputus");
+      else if (S.live) setConn(true, "terhubung");
+      else setConn(true, "file dibaca");
+    }
+    (d.events || []).forEach(addEvent);
+    const ss = d.samples || [];
+    if (ss.length) {
+      ss.forEach(pushSample);
+      render(ss[ss.length - 1]);
+      if (!S.paused) { drawChart(); drawSparks(); }
+    }
+    S.sSeq = d.s_seq ?? S.sSeq;
+    S.eSeq = d.e_seq ?? S.eSeq;
+  };
+}
+
+/* ══════════ KONTROL ══════════ */
+$("btnPause").addEventListener("click", (e) => {
+  if (!S.paused && (S.lastStatus === "BAHAYA" || S.lastStatus === "SENSOR_FAULT")) {
+    if (!confirm("Status sedang BAHAYA. Jeda hanya membekukan tampilan — "
+      + "data tetap direkam dan perangkat tetap bekerja.\n\nLanjutkan?")) return;
+  }
+  S.paused = !S.paused;
+  e.currentTarget.setAttribute("aria-pressed", String(S.paused));
+  $("pauseTxt").textContent = S.paused ? "Lanjut" : "Jeda";
+  toast(S.paused ? "Tampilan dijeda — data tetap direkam"
+                 : "Tampilan dilanjutkan", "info");
+});
+
+$("btnClear").addEventListener("click", () => {
+  if (!confirm("Bersihkan tampilan? Data yang sedang terlihat akan dihapus dari "
+    + "layar. Rekaman di server (logs/*.jsonl) tidak terpengaruh.")) return;
+  ["X","A","R","P","V","W","AL"].forEach((k) => { S[k].length = 0; });
+  S.count = 0; S.evCount = 0; S.marks.length = 0;
+  $("cntTxt").textContent = "0";
+  $("logMeta").textContent = "0 event";
+  $("log").innerHTML =
+    `<div class="empty" id="logEmpty">
+       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+         aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+       <div>Belum ada event.</div></div>`;
+  drawChart(); drawSparks();
+  toast("Tampilan dibersihkan", "info");
+});
+
+$("btnCsv").addEventListener("click", () => {
+  if (!S.X.length) { toast("Belum ada data untuk diekspor", "info"); return; }
+  const rows = [["uptime_s","adc","adc_raw","ppm","valve","power","alarm"]];
+  for (let i = 0; i < S.X.length; i++) {
+    rows.push([S.X[i], S.A[i], S.R[i], S.P[i],
+      S.V[i] ? "OPEN" : "CLOSED", S.W[i] ? "ON" : "OFF", S.AL[i] ? 1 : 0]);
+  }
+  const blob = new Blob([rows.map((r) => r.join(",")).join("\n")],
+    { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `safegas_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`CSV diekspor (${num(S.X.length)} baris)`, "ok");
+});
+
+$("btnReset").addEventListener("click", async () => {
+  const b = $("btnReset");
+  if (!confirm("Kirim perintah RESET ke perangkat?\n\n"
+    + "Reset hanya berhasil bila status BAHAYA dan kadar gas sudah di bawah ambang.")) return;
+  b.disabled = true;
+  try {
+    const r = await fetch("/api/cmd", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "reset" }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.ok) toast("Perintah reset terkirim", "ok");
+    else toast(j.error || "Perintah reset gagal (mode ini tidak mendukung)", "bad");
+  } catch (err) {
+    toast(`Gagal mengirim: ${err.message}`, "bad");
+  } finally { b.disabled = false; }
+});
+
+/* ══════════ BOOT ══════════ */
+initTheme();
+drawChart();
+connect();
+
+window.addEventListener("beforeunload", () => { if (S.es) S.es.close(); });
+
+let rz;
+window.addEventListener("resize", () => {
+  clearTimeout(rz);
+  rz = setTimeout(() => { drawChart(); drawSparks(); }, 200);
+});
+</script>
+</body>
+</html>
