@@ -8,7 +8,10 @@ Berbeda dari alarm gas konvensional yang hanya memberi peringatan, SafeGas melak
 memutus aliran listrik rumah untuk menghilangkan sumber percikan api.
 
 Dashboard web menampilkan seluruh telemetri **secara realtime** (push lewat SSE,
-latensi terukur ±0,1–0,3 detik) — tanpa akun, tanpa broker, tanpa internet.
+latensi terukur ±0,1–0,3 detik) — tanpa akun dan tanpa broker MQTT.
+Satu-satunya hal yang butuh internet adalah library grafik Plotly (dimuat dari
+CDN); tanpa internet kartu metrik dan log event tetap berjalan, hanya grafiknya
+kosong — lihat [Troubleshooting](#13-troubleshooting).
 
 ---
 
@@ -16,17 +19,19 @@ latensi terukur ±0,1–0,3 detik) — tanpa akun, tanpa broker, tanpa internet.
 
 1. [Struktur Repositori](#1-struktur-repositori)
 2. [Arsitektur Sistem](#2-arsitektur-sistem)
-3. [Pemetaan Pin / GPIO](#3-pemetaan-pin--gpio)
-4. [Logika Program — State Machine](#4-logika-program--state-machine)
-5. [Cara Menjalankan di Wokwi](#5-cara-menjalankan-di-wokwi) ← **mulai di sini**
-6. [Cara Menjalankan Dashboard](#6-cara-menjalankan-dashboard)
-7. [Cara Memastikan Dashboard Realtime](#7-cara-memastikan-dashboard-realtime)
-8. [Format Data (CSV & MQTT)](#8-format-data-csv--mqtt)
-9. [Skenario Demo / Pengujian](#9-skenario-demo--pengujian)
-10. [Pengujian Otomatis](#10-pengujian-otomatis)
-11. [Catatan Perubahan dari v12](#11-catatan-perubahan-dari-v12)
-12. [Troubleshooting](#12-troubleshooting)
-13. [Keterbatasan](#13-keterbatasan)
+3. [Daftar Komponen dan Alasan Pemilihan](#3-daftar-komponen-dan-alasan-pemilihan)
+4. [Pemetaan Pin / GPIO](#4-pemetaan-pin--gpio)
+5. [Logika Program — State Machine](#5-logika-program--state-machine)
+6. [Cara Menjalankan di Wokwi](#6-cara-menjalankan-di-wokwi)
+7. [Cara Menjalankan Dashboard](#7-cara-menjalankan-dashboard)
+8. [Cara Memastikan Dashboard Realtime](#8-cara-memastikan-dashboard-realtime)
+9. [Format Data (CSV & MQTT)](#9-format-data-csv--mqtt)
+10. [Skenario Demo / Pengujian](#10-skenario-demo--pengujian)
+11. [Pengujian Otomatis](#11-pengujian-otomatis)
+12. [Catatan Perubahan dari v12](#12-catatan-perubahan-dari-v12)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Kesesuaian dengan Guideline Stage 2](#14-kesesuaian-dengan-guideline-stage-2)
+15. [Keterbatasan](#15-keterbatasan)
 
 ---
 
@@ -117,7 +122,35 @@ di Wokwi.
 
 ---
 
-## 3. Pemetaan Pin / GPIO
+## 3. Daftar Komponen dan Alasan Pemilihan
+
+Guideline Stage 2 mewajibkan setiap tim menjelaskan **fungsi dan alasan** pemilihan
+setiap komponen. Tabel berikut menjawab requirement tersebut.
+
+| # | Komponen | Fungsi dalam sistem | Alasan pemilihan |
+|---|---|---|---|
+| 1 | **ESP32 DevKit V1** | Mikrokontroler utama: membaca sensor, menjalankan state machine, menggerakkan aktuator, mengirim data | Wajib menurut guideline. Dipilih karena **dual-core** (safety & jaringan terpisah), ADC 12-bit, I2C, PWM, dan **tersedia di Wokwi** |
+| 2 | **MQ-2 gas sensor** | Input utama: mendeteksi konsentrasi LPG di udara | Tersedia di Wokwi sebagai `wokwi-gas-sensor`; responsif terhadap LPG/metana. **Keterbatasan:** tidak selektif (asap masakan ikut terdeteksi) — untuk produksi diganti MQ-6 |
+| 3 | **Servo motor** | Aktuator: memutar knop regulator LPG (0° tutup, 90° buka) | Butuh gerak **proporsional**, bukan sekadar on/off. Servo tersedia di Wokwi dan mudah dipasang di knop regulator |
+| 4 | **Relay module 1 channel** | Aktuator: memutus aliran listrik rumah (sumber percikan api) | Keperluan **mitigasi**, bukan hanya alarm. Relay memberi isolasi antara 3,3 V ESP32 dan beban listrik |
+| 5 | **Buzzer** | Indikator audio: 1500 Hz waspada, 2500 Hz bahaya | Alarm harus terdengar tanpa perlu melihat layar. Frekuensi berbeda memberi informasi tingkat keparahan |
+| 6 | **LED hijau (D13)** | Indikator visual: status NORMAL | Umpan balik sekilas dari jarak jauh; tidak bergantung pada OLED |
+| 7 | **LED merah (D32)** | Indikator visual: ADA_GAS / BAHAYA | Warna berbeda dari LED hijau agar status darurat langsung terbaca |
+| 8 | **OLED SSD1306 128×64** | Display lokal: status, ADC, ppm, kondisi katup & listrik | Menampilkan data **tanpa** butuh komputer/dashboard — penting saat jaringan mati. I2C hanya butuh 2 pin |
+| 9 | **Push button (D25)** | Input manual: reset setelah gas bersih | Reset harus **fisik dan disengaja**, tidak bisa dilakukan dari jauh saat gas masih ada (interlock) |
+| 10 | **Resistor 220 Ω (×3)** | Pembatas arus untuk LED hijau, LED merah, dan LED putih | Mencegah LED rusak; nilai standar untuk LED 3,3 V |
+
+**Komponen yang sengaja TIDAK dipakai:**
+
+| Komponen | Alasan tidak dipakai |
+|---|---|
+| Sensor suhu/kelembapan (DHT22) | Tidak relevan dengan deteksi kebocoran LPG; menambah kompleksitas tanpa manfaat safety |
+| Kamera / ESP32-CAM | Tidak tersedia andal di Wokwi dan bukan kebutuhan use case |
+| Modul SD card | Pencatatan sudah ditangani dashboard (`logs/*.jsonl`); tidak perlu biaya hardware tambahan |
+
+---
+
+## 4. Pemetaan Pin / GPIO
 
 | Pin ESP32 | Terhubung ke | Tipe Sinyal | Keterangan |
 |---|---|---|---|
@@ -136,7 +169,7 @@ di Wokwi.
 
 ---
 
-## 4. Logika Program — State Machine
+## 5. Logika Program — State Machine
 
 | State | Kondisi masuk | Katup | Listrik | Alarm | Reset |
 |---|---|---|---|---|---|
@@ -162,11 +195,11 @@ di Wokwi.
 7. **Heartbeat lintas-core** — jika Core 1 hang > 3 detik, Core 0 memaksa
    katup tutup + listrik putus.
 8. **Listrik diputus saat `ADA_GAS`** — bukan hanya saat BAHAYA
-   (ini perbaikan bug v12; lihat [bagian 11](#11-catatan-perubahan-dari-v12)).
+   (ini perbaikan bug v12; lihat [bagian 12](#12-catatan-perubahan-dari-v12)).
 
 ---
 
-## 5. Cara Menjalankan di Wokwi
+## 6. Cara Menjalankan di Wokwi
 
 ### 5.1 Yang perlu disiapkan
 
@@ -244,10 +277,10 @@ akan menampilkan `Reset DITOLAK`.
 
 ---
 
-## 6. Cara Menjalankan Dashboard
+## 7. Cara Menjalankan Dashboard
 
 Dashboard punya **4 mode**. Untuk demo Wokwi, pakai **mode `serial`**
-(paling aman, tanpa jaringan).
+(paling aman — tidak butuh akun, broker, maupun kredensial jaringan).
 
 ### 6.1 Persiapan (sekali saja)
 
@@ -391,7 +424,7 @@ Berguna untuk membuat screenshot laporan tanpa harus menjalankan Wokwi lagi.
 
 ---
 
-## 7. Cara Memastikan Dashboard Realtime
+## 8. Cara Memastikan Dashboard Realtime
 
 Ini bagian yang membuktikan dashboard **benar-benar** menampilkan data dari
 Wokwi secara realtime, bukan data statis.
@@ -487,7 +520,7 @@ terukur ±0,1–0,3 detik, bukan 1–5 detik seperti polling.
 
 ---
 
-## 8. Format Data (CSV & MQTT)
+## 9. Format Data (CSV & MQTT)
 
 ### 8.1 Baris CSV di Serial (dipakai mode `serial`)
 
@@ -547,27 +580,37 @@ Contoh telemetri:
 
 ---
 
-## 9. Skenario Demo / Pengujian
+## 10. Skenario Demo / Pengujian
 
-| # | Test Case | Input / Kondisi | Expected Result | Status |
-|---|---|---|---|---|
-| 1 | Boot & warm-up | Nyalakan sistem, tunggu 5 detik | OLED `WARMUP` → `NORMAL`; katup buka 90°; listrik nyala; LED hijau | ⬜ |
-| 2 | Deteksi gas ringan | Putar potensio hingga ADC ≥ 1500 | Status `ADA_GAS`; katup tutup; listrik putus; buzzer 1500 Hz lambat; LED merah | ⬜ |
-| 3 | Deteksi gas kritis | Putar hingga ADC ≥ 2800 | Status `BAHAYA` terkunci; buzzer 2500 Hz cepat | ⬜ |
-| 4 | Gas bertahan lama | Tahan ADC > 1300 selama 15 detik | Status `BAHAYA` terkunci (alasan: gas bertahan terlalu lama) | ⬜ |
-| 5 | Tren naik cepat | Naikkan ADC ≥ 50/detik dua kali berturut-turut | Status `MEMBURUK` → `BAHAYA` | ⬜ |
-| 6 | Reset ditolak | Tekan reset saat ADC masih ≥ 1300 | Log `Reset DITOLAK: gas masih tinggi`; sistem tetap `BAHAYA` | ⬜ |
-| 7 | Reset berhasil | Turunkan ADC < 1300, tunggu 3 detik, tekan reset | Log `Reset BERHASIL`; kembali `NORMAL`; katup buka; listrik nyala | ⬜ |
-| 8 | Fail-safe sensor | Cabut/lepas sensor (ADC ≈ 0) | Status `SENSOR_FAULT`; katup tutup; listrik putus | ⬜ |
-| 9 | Reset dari dashboard | Kirim `reset` ke topik `cmd` saat gas masih tinggi | Reset DITOLAK (interlock tetap berlaku) | ⬜ |
-| 10 | Dashboard realtime | Paste Serial Monitor ke jembatan saat status berubah | Grafik & kartu metrik ikut berubah < 1 detik | ⬜ |
+Guideline Stage 2 meminta **minimal 3 test scenario** dengan kolom
+*Test Case · Input/Condition · Expected Result · Actual Result · Status*.
+Tabel di bawah memenuhi format tersebut (10 skenario).
 
-Kolom **Status** diisi setelah pengujian manual di Wokwi (butuh screenshot
-untuk laporan).
+Kolom **Actual Result** dan **Status** diisi saat pengujian manual di Wokwi
+(butuh screenshot untuk laporan). Hasil pengujian **otomatis** yang sudah
+terverifikasi ada di [bagian 11](#11-pengujian-otomatis).
+
+| # | Test Case | Input / Kondisi | Expected Result | Actual Result | Status |
+|---|---|---|---|---|---|
+| 1 | Boot & warm-up | Nyalakan sistem, tunggu 5 detik | OLED `WARMUP` → `NORMAL`; katup buka 90°; listrik nyala; LED hijau | | ⬜ |
+| 2 | Deteksi gas ringan | Putar potensio hingga ADC ≥ 1500 | Status `ADA_GAS`; katup tutup; listrik putus; buzzer 1500 Hz lambat; LED merah | | ⬜ |
+| 3 | Deteksi gas kritis | Putar hingga ADC ≥ 2800 | Status `BAHAYA` terkunci; buzzer 2500 Hz cepat | | ⬜ |
+| 4 | Gas bertahan lama | Tahan ADC > 1300 selama 15 detik | Status `BAHAYA` terkunci (alasan: gas bertahan terlalu lama) | | ⬜ |
+| 5 | Tren naik cepat | Naikkan ADC ≥ 50/detik dua kali berturut-turut | Status `MEMBURUK` → `BAHAYA` | | ⬜ |
+| 6 | Reset ditolak | Tekan reset saat ADC masih ≥ 1300 | Log `Reset DITOLAK: gas masih tinggi`; sistem tetap `BAHAYA` | | ⬜ |
+| 7 | Reset berhasil | Turunkan ADC < 1300, tunggu 3 detik, tekan reset | Log `Reset BERHASIL`; kembali `NORMAL`; katup buka; listrik nyala | | ⬜ |
+| 8 | Fail-safe sensor | Cabut/lepas sensor (ADC ≈ 0) | Status `SENSOR_FAULT`; katup tutup; listrik putus | | ⬜ |
+| 9 | Reset dari dashboard | Kirim `reset` ke topik `cmd` saat gas masih tinggi | Reset DITOLAK (interlock tetap berlaku) | | ⬜ |
+| 10 | Dashboard realtime | Paste Serial Monitor ke jembatan saat status berubah | Grafik & kartu metrik ikut berubah < 1 detik | | ⬜ |
+
+> **Sudah terverifikasi otomatis** (tanpa perlu diisi manual): fail-safe boot,
+> transisi NORMAL→ADA_GAS→BAHAYA, hysteresis 1500/1300, pemutusan listrik &
+> katup, interlock reset (3 kondisi), `SENSOR_FAULT`, konversi ppm, format CSV,
+> serta pipeline realtime Serial/MQTT → dashboard → browser.
 
 ---
 
-## 10. Pengujian Otomatis
+## 11. Pengujian Otomatis
 
 Logika safety diuji **tanpa ESP32**: `sketch.ino` **asli** dikompilasi dengan
 mock Arduino (bukan disalin ulang), lalu dijalankan di komputer.
@@ -603,7 +646,7 @@ monotonisitas konversi ppm, dan format baris CSV.
 
 ---
 
-## 11. Catatan Perubahan dari v12
+## 12. Catatan Perubahan dari v12
 
 Lihat `legacy/sketch_v12_original.ino` untuk versi asli.
 
@@ -626,7 +669,7 @@ otomatis di Wokwi.
 
 ---
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
@@ -646,7 +689,80 @@ otomatis di Wokwi.
 
 ---
 
-## 13. Keterbatasan
+## 14. Kesesuaian dengan Guideline Stage 2
+
+Checklist ini memetakan requirement `docs/Guideline_Stage2_SIC8.pdf` terhadap
+apa yang **sudah ada di repo** dan apa yang **harus dilengkapi di luar repo**
+(untuk laporan pengumpulan).
+
+### Requirement wajib (Minimum Project Requirement)
+
+| Requirement | Status | Di mana |
+|---|---|---|
+| ESP32 sebagai controller utama | ✅ | `sketch.ino` |
+| Minimal 1 input device/sensor | ✅ | MQ-2 (D34) + push button (D25) |
+| Minimal 1 output device/aktuator/indikator | ✅ | Servo, relay, buzzer, 2 LED, OLED |
+| Wokwi sebagai media simulasi | ✅ | `diagram.json` + `sketch.ino` |
+| Program menunjukkan fungsi utama | ✅ | State machine 6 tingkat |
+| Serial Monitor sebagai media debugging/output | ✅ | Baris `[LOG]`, `[EVENT]`, `CSV` |
+| Dokumentasi wiring dan logic | ✅ | README bagian 2, 4, 5 |
+
+### Detail Project A–G
+
+| Bagian | Requirement | Status | Keterangan |
+|---|---|---|---|
+| A | Tema/use case, target user, judul | ✅ | Smart Alert/Security + Smart Control; user: rumah tangga pengguna LPG |
+| B | Komponen + **alasan pemilihan** | ✅ | README bagian 3 |
+| B | Fungsi GPIO teridentifikasi | ✅ | README bagian 4 |
+| B | Rangkaian dapat disimulasikan di Wokwi | ✅ | `diagram.json` (13 part, 29 koneksi) |
+| C | Block diagram Input → ESP32 → Output | ✅ | README bagian 2 |
+| C | Communication → MQTT/Broker → Dashboard | ✅ | README bagian 2 & 9 |
+| C | Wiring diagram di Wokwi | ✅ | `diagram.json` |
+| C | Penjelasan power, GPIO, ground | ✅ | README bagian 4 (tabel pin) |
+| D | Program ESP32 (Arduino) | ✅ | `sketch.ino`, compile 0 error |
+| D | Baca input → hasilkan output | ✅ | Terverifikasi 35 assertion |
+| D | Logic/rule sesuai use case | ✅ | State machine + interlock |
+| D | Serial Monitor untuk debugging | ✅ | `[LOG]` per detik + CSV 2×/detik |
+| D | Testing dan debugging | ✅ | `tests/` (3 suite) |
+| E | Serial communication | ✅ | CSV + `[EVENT]` |
+| E | MQTT + HiveMQ Cloud | ✅ | TLS 8883, topik `safegas/safegas01/*` |
+| E | Topic & payload konsisten | ✅ | README bagian 9 |
+| F | Python + paho-mqtt | ✅ | `dashboard/safegas_dashboard.py` mode `mqtt` |
+| F | Plotly untuk visualisasi | ✅ | `dashboard/index.html` |
+| F | Dashboard menampilkan data/status/trend | ✅ | Status, 5 kartu metrik, grafik, log event |
+| G | Minimal 3 skenario pengujian | ✅ | 10 skenario (README bagian 10) |
+| G | Uji kondisi normal & abnormal | ✅ | NORMAL → ADA_GAS → BAHAYA → reset |
+| G | Catat input/expected/actual/status | ✅ | Kolom lengkap tersedia (diisi saat uji Wokwi) |
+| G | Dokumentasi screenshot/video | ⚠️ | **Di luar repo** — dilampirkan di laporan |
+
+> **Catatan pemilihan dashboard (requirement F).** Guideline menyebut
+> *"Google Colab / IDE Python"* — kami memilih **Python lokal + browser**
+> (`dashboard/safegas_dashboard.py`) alih-alih notebook Colab, dengan alasan:
+> Colab tidak bisa menampilkan grafik yang ter-update realtime tanpa flicker,
+> butuh koneksi internet, dan tidak bisa menerima paste Serial Monitor Wokwi
+> secara interaktif. Dashboard lokal memakai **Plotly** (sesuai guideline) dan
+> mengirim data lewat SSE sehingga grafik bergerak mulus. Ini tetap memenuhi
+> "IDE Python" karena dijalankan dengan Python 3 standar.
+
+
+### Final Documentation (pengumpulan)
+
+| Item | Status | Catatan |
+|---|---|---|
+| Laporan `.docx` | ⚠️ **Di luar repo** | Isi laporan sudah tersedia sebagai README ini; tinggal disalin ke Word + cover/anggota |
+| **Wokwi Project Link** | ⚠️ **Perlu dibuat** | Buat proyek di wokwi.com dari 3 file di repo, lalu tempel link-nya di laporan |
+| Source code / sketch | ✅ | Repo ini |
+| Video demo `.mp4` | ⚠️ **Di luar repo** | Rekam layar Wokwi + dashboard saat demo |
+| Screenshot hasil pengujian | ⚠️ **Di luar repo** | Ambil dari Wokwi untuk tiap skenario bagian 10 |
+
+> **Catatan jujur:** empat item bertanda ⚠️ memang **tidak bisa** disediakan
+> oleh repo kode — itu artefak pengumpulan (link Wokwi, video, screenshot,
+> laporan Word). Semua bahan mentahnya sudah siap di sini; yang tersisa adalah
+> tindakan manual di luar repo.
+
+---
+
+## 15. Keterbatasan
 
 - **Simulasi, bukan perangkat fisik.** Sensor MQ-2 disimulasikan dengan
   potensiometer; nilai ADC tidak memiliki satuan ppm yang terkalibrasi.
