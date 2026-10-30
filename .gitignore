@@ -33,4 +33,4 @@ secrets.h
 *.key
 
 # Temp dari credential manager / tooling
-.hermes-tmp.*/
+.*-tmp.*/
